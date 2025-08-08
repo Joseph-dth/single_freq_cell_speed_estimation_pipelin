@@ -290,11 +290,9 @@ def dashboard(settings_file: str):
     tb_period = TextBox(ax_period, 'Period(s)', initial="12.0")
     tb_repeats = TextBox(ax_repeats, 'Repeats', initial="8")
 
-    # Move time for speed dt, and min/max speed filter (px/s)
-    ax_movetime = plt.axes([0.66, 0.12, 0.08, 0.03])
-    tb_movetime = TextBox(ax_movetime, 'Move(s)', initial="1.0")
-    ax_minspd = plt.axes([0.75, 0.12, 0.07, 0.03])
-    ax_maxspd = plt.axes([0.83, 0.12, 0.07, 0.03])
+    # Min/max speed filter (px/s)
+    ax_minspd = plt.axes([0.66, 0.12, 0.09, 0.03])
+    ax_maxspd = plt.axes([0.76, 0.12, 0.09, 0.03])
     tb_minspd = TextBox(ax_minspd, 'Min v', initial="")
     tb_maxspd = TextBox(ax_maxspd, 'Max v', initial="")
 
@@ -358,10 +356,7 @@ def dashboard(settings_file: str):
     }
 
     # Buttons: more compact layout
-    ax_preview = plt.axes([0.42, 0.08, 0.09, 0.03])
-    btn_preview = Button(ax_preview, 'Preview')
-    
-    ax_compute = plt.axes([0.52, 0.08, 0.11, 0.03])
+    ax_compute = plt.axes([0.42, 0.08, 0.11, 0.03])
     btn_compute = Button(ax_compute, 'Compute')
     
     ax_apply_filter = plt.axes([0.42, 0.04, 0.11, 0.03])
@@ -580,8 +575,9 @@ def dashboard(settings_file: str):
                             axes[0, j].clear()
                             plot_groups(axes[0, j], groups.get(label, {}), label)
                             axes[0, j].set_title(("Data-" + label) + (" (KF)" if use_kf else " (RAW)"))
-                            axes[0, j].axvline(t_start, color='cyan', linestyle='-', linewidth=1.8, alpha=0.9)
-                            axes[0, j].axvline(t_end, color='magenta', linestyle='-', linewidth=1.8, alpha=0.9)
+                            # Update vlines references so dragging still works
+                            vlines_tstart[j] = axes[0, j].axvline(t_start, color='cyan', linestyle='-', linewidth=1.8, alpha=0.9)
+                            vlines_tend[j] = axes[0, j].axvline(t_end, color='magenta', linestyle='-', linewidth=1.8, alpha=0.9)
             
             # Clean up rectangle selection
             if rect_selection['rect_patch'] is not None:
@@ -627,32 +623,10 @@ def dashboard(settings_file: str):
         return [(t_start + k * period_s, t_end + k * period_s) for k in range(repeats)]
 
 
-    # Preview replicated windows on bottom row
-    def run_preview(event=None):
-        cycles = build_cycles()
-        groups_local = group_by_roi_and_id(current_df())
-        for j, roi in enumerate(LABELS):
-            ax = axes[1, j]
-            ax.clear()
-            plot_groups(ax, groups_local.get(roi, {}), roi)
-            for (ts, te) in cycles:
-                ax.axvline(ts, color='cyan', linestyle=':', linewidth=1.0, alpha=0.9)
-                ax.axvline(te, color='magenta', linestyle=':', linewidth=1.0, alpha=0.9)
-            ax.set_title("Windows-" + roi)
-        fig.canvas.draw_idle()
-    btn_preview.on_clicked(run_preview)
 
-    # Compute speeds for all cells (use move time as dt)
-    def parse_move_time() -> float:
-        try:
-            mv = float(tb_movetime.text)
-            return mv if mv > 0 else 1.0
-        except Exception:
-            return 1.0
-
+    # Compute speeds for all cells (use t2-t1 for time frame)
     def compute_speeds(event=None):
         cycles = build_cycles()
-        move_s = parse_move_time()
         df = current_df()
         groups_local = group_by_roi_and_id(df)
         speed_rows = []
@@ -665,7 +639,8 @@ def dashboard(settings_file: str):
                 for cycle_idx, (ts, te) in enumerate(cycles):
                     x_s = sample_x_at_time(traj_sorted, ts, clamp=False)
                     x_e = sample_x_at_time(traj_sorted, te, clamp=False)
-                    v_px_s = (x_e - x_s) / move_s if (np.isfinite(x_s) and np.isfinite(x_e)) else np.nan
+                    move_s = te - ts  # Use t2-t1 for time frame
+                    v_px_s = (x_e - x_s) / move_s if (np.isfinite(x_s) and np.isfinite(x_e) and move_s > 0) else np.nan
                     v_um_s = v_px_s * scale_microns_per_pixel if (scale_microns_per_pixel is not None) else np.nan
                     speed_rows.append({
                         'roi': roi, 'cycle_index': cycle_idx, 'cell_id': int(_id),
@@ -676,7 +651,7 @@ def dashboard(settings_file: str):
                         'speed_um_per_s': abs(v_um_s) if np.isfinite(v_um_s) else np.nan
                     })
         fig._speeds_df = pd.DataFrame(speed_rows)
-        print(f"Computed speeds: {len(speed_rows)} rows (dt=Move(s))")
+        print(f"Computed speeds: {len(speed_rows)} rows (dt=t2-t1)")
     btn_compute.on_clicked(compute_speeds)
 
     # Apply filter by min/max speed and update bottom plots to show only passing IDs

@@ -11,7 +11,7 @@ Features:
 5. Results dashboard
 
 Author: Integrated from ex_setting_v3.py, roi_setting_gui_tk.py, 
-        cell_tracking_analysis.py, and roi_tracking_dashboard.py
+        cell_tracking_analysis.py, and roi_tracking_dashboard_v2.py
 """
 
 import tkinter as tk
@@ -55,7 +55,7 @@ try:
     import roi_tracking_dashboard
 except ImportError:
     roi_tracking_dashboard = None
-    print("Warning: roi_tracking_dashboard.py not found - dashboard will use basic visualization")
+    print("Warning: roi_tracking_dashboard_v2.py not found - dashboard will use basic visualization")
 
 class IntegratedCellAnalysisApp:
     def __init__(self, root):
@@ -1695,21 +1695,21 @@ based on the current settings file.
         self.open_dashboard()
     
     def open_dashboard(self):
-        """Open the real roi_tracking_dashboard.py as a separate process"""
+        """Open the real roi_tracking_dashboard_v2.py as a separate process"""
         if not self.settings_path:
             messagebox.showwarning("No Settings", "Please load a settings file first.")
             return
             
         try:
             # Get the original matplotlib dashboard script path
-            dashboard_script = os.path.join(os.path.dirname(__file__), 'roi_tracking_dashboard.py')
+            dashboard_script = os.path.join(os.path.dirname(__file__), 'roi_tracking_dashboard_v2.py')
             
             if not os.path.exists(dashboard_script):
                 # Try current directory
-                dashboard_script = 'roi_tracking_dashboard.py'
+                dashboard_script = 'roi_tracking_dashboard_v2.py'
                 if not os.path.exists(dashboard_script):
                     messagebox.showerror("Error", 
-                        "roi_tracking_dashboard.py not found.\n"
+                        "roi_tracking_dashboard_v2.py not found.\n"
                         "Please ensure the dashboard script is in the same directory.")
                     return
             
@@ -1771,7 +1771,7 @@ Integrated from:
 - ex_setting_v3.py
 - roi_setting_gui_tk.py
 - cell_tracking_analysis.py
-- roi_tracking_dashboard.py
+- roi_tracking_dashboard_v2.py
         """
         messagebox.showinfo("About", about_text.strip())
     

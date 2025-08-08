@@ -221,7 +221,7 @@ def dashboard(settings_file: str):
     q_init, r_init = 1.0, 1.0
     df_kf = df_kf_loaded if df_kf_loaded is not None else recompute_kf_from_raw(df_raw, q_init, r_init)
     
-    # Track deleted lines: set of (roi, cell_id) tuples
+    # Track deleted lines: set of (roi, cell_id) tuples (keeping for compatibility)
     deleted_lines = set()
 
     def current_df() -> pd.DataFrame:
@@ -230,9 +230,13 @@ def dashboard(settings_file: str):
     # Initial groups
     groups = group_by_roi_and_id(current_df())
 
-    # Figure with 2 rows x 3 cols: top=data, bottom=preview windows
-    fig, axes = plt.subplots(2, 3, figsize=(17, 10), sharex=False, sharey=False)
+    # Figure with 1 row x 3 cols: single row of data plots
+    fig, axes = plt.subplots(1, 3, figsize=(17, 8), sharex=False, sharey=False)
     fig.suptitle(f"ROI Tracking - {base_name}")
+    
+    # Make axes indexable as axes[j] instead of axes[0, j]
+    if len(axes.shape) == 1:
+        axes = axes.reshape(1, -1)
 
     # Plotter for trajectories
     def plot_groups(ax, groups_roi: Dict[int, pd.DataFrame], roi_name: str = ""):
@@ -244,7 +248,10 @@ def dashboard(settings_file: str):
                 continue
             ts = traj['timestamp'].values
             xs = traj['cell_x'].values
-            line = ax.plot(ts, xs, linewidth=1, alpha=0.85)[0]
+            line = ax.plot(ts, xs, linewidth=1, alpha=0.85, picker=True, pickradius=15)[0]
+            # Store metadata for click handling
+            line.roi_name = roi_name
+            line.cell_id = cell_id
             lines.append(line)
         ax.grid(True, alpha=0.3)
         ax.set_xlabel('time (s)')
@@ -263,60 +270,104 @@ def dashboard(settings_file: str):
     vlines_tstart = [axes[0, j].axvline(t_start, color='cyan', linestyle='-', linewidth=1.8, alpha=0.9) for j in range(3)]
     vlines_tend   = [axes[0, j].axvline(t_end,   color='magenta', linestyle='-', linewidth=1.8, alpha=0.9) for j in range(3)]
 
-    # Bottom row will show the same curves + preview of replicated windows
-    for j, label in enumerate(LABELS):
-        axes[1, j].set_title("Windows-" + label)
-        axes[1, j].grid(True, alpha=0.3)
-        axes[1, j].set_xlabel('time (s)')
-        axes[1, j].set_ylabel('x (px)')
+    plt.subplots_adjust(left=0.07, right=0.98, bottom=0.20, top=0.9, wspace=0.3)
 
-    plt.subplots_adjust(left=0.07, right=0.98, bottom=0.27, top=0.9, wspace=0.3, hspace=0.35)
-
-    # UI controls
-    ax_chk = plt.axes([0.07, 0.18, 0.12, 0.06])
+    # UI controls - moved up since we removed bottom plots
+    ax_chk = plt.axes([0.07, 0.15, 0.12, 0.04])
     chk = CheckButtons(ax_chk, ["Use KF"], [use_kf])
 
-    ax_q = plt.axes([0.22, 0.19, 0.25, 0.03])
-    ax_r = plt.axes([0.22, 0.15, 0.25, 0.03])
+    ax_q = plt.axes([0.22, 0.16, 0.25, 0.03])
+    ax_r = plt.axes([0.22, 0.12, 0.25, 0.03])
     s_q = Slider(ax_q, 'KF Q', 0.001, 10.0, valinit=q_init, valstep=0.001)
     s_r = Slider(ax_r, 'KF R', 0.001, 10.0, valinit=r_init, valstep=0.001)
 
-    ax_apply = plt.axes([0.49, 0.165, 0.12, 0.05])
+    ax_apply = plt.axes([0.49, 0.135, 0.12, 0.04])
     btn_apply = Button(ax_apply, 'Apply KF')
 
-    # Period/Repeats inputs - more compact
-    ax_period = plt.axes([0.66, 0.19, 0.09, 0.04])
-    ax_repeats = plt.axes([0.76, 0.19, 0.07, 0.04])
+    # Period/Repeats inputs
+    ax_period = plt.axes([0.66, 0.16, 0.09, 0.03])
+    ax_repeats = plt.axes([0.76, 0.16, 0.07, 0.03])
     tb_period = TextBox(ax_period, 'Period(s)', initial="12.0")
     tb_repeats = TextBox(ax_repeats, 'Repeats', initial="8")
 
-    # Move time for speed dt, and min/max speed filter (px/s) - more compact
-    ax_movetime = plt.axes([0.66, 0.15, 0.08, 0.04])
+    # Move time for speed dt, and min/max speed filter (px/s)
+    ax_movetime = plt.axes([0.66, 0.12, 0.08, 0.03])
     tb_movetime = TextBox(ax_movetime, 'Move(s)', initial="1.0")
-    ax_minspd = plt.axes([0.75, 0.15, 0.07, 0.04])
-    ax_maxspd = plt.axes([0.83, 0.15, 0.07, 0.04])
+    ax_minspd = plt.axes([0.75, 0.12, 0.07, 0.03])
+    ax_maxspd = plt.axes([0.83, 0.12, 0.07, 0.03])
     tb_minspd = TextBox(ax_minspd, 'Min v', initial="")
     tb_maxspd = TextBox(ax_maxspd, 'Max v', initial="")
 
-    # Start/End time TextBoxes (smaller)
-    ax_tstart = plt.axes([0.22, 0.11, 0.08, 0.04])
-    ax_tend   = plt.axes([0.31, 0.11, 0.08, 0.04])
+    # Start/End time TextBoxes
+    ax_tstart = plt.axes([0.22, 0.08, 0.08, 0.03])
+    ax_tend   = plt.axes([0.31, 0.08, 0.08, 0.03])
     tb_tstart = TextBox(ax_tstart, 'Start(s)', initial=f"{t_start:.3f}")
     tb_tend   = TextBox(ax_tend,   'End(s)',   initial=f"{t_end:.3f}")
 
-    # Buttons: more compact layout in two rows
-    # Row 1: Preview and Compute
-    ax_preview = plt.axes([0.42, 0.11, 0.09, 0.04])
+    # Scale sliders - get initial data bounds
+    df_for_scale = current_df()
+    if len(df_for_scale) > 0:
+        t_data_min, t_data_max = df_for_scale['timestamp'].min(), df_for_scale['timestamp'].max()
+        x_data_min, x_data_max = df_for_scale['cell_x'].min(), df_for_scale['cell_x'].max()
+        t_range = t_data_max - t_data_min
+        x_range = x_data_max - x_data_min
+    else:
+        t_data_min, t_data_max = 0, 100
+        x_data_min, x_data_max = 0, 500
+        t_range, x_range = 100, 500
+
+    # X Scale (time) slider
+    ax_x_scale = plt.axes([0.07, 0.05, 0.12, 0.02])
+    s_x_scale = Slider(ax_x_scale, 'X Zoom', 0.1, 10.0, valinit=1.0, valstep=0.1)
+    
+    # Y Scale (position) slider  
+    ax_y_scale = plt.axes([0.07, 0.02, 0.12, 0.02])
+    s_y_scale = Slider(ax_y_scale, 'Y Zoom', 0.1, 10.0, valinit=1.0, valstep=0.1)
+    
+    # X and Y offset buttons
+    ax_x_left = plt.axes([0.21, 0.05, 0.025, 0.02])
+    ax_x_right = plt.axes([0.24, 0.05, 0.025, 0.02])
+    ax_y_up = plt.axes([0.27, 0.05, 0.025, 0.02])
+    ax_y_down = plt.axes([0.30, 0.05, 0.025, 0.02])
+    
+    btn_x_left = Button(ax_x_left, '←')
+    btn_x_right = Button(ax_x_right, '→')
+    btn_y_up = Button(ax_y_up, '↑')
+    btn_y_down = Button(ax_y_down, '↓')
+    
+    # Select and Delete buttons
+    ax_select = plt.axes([0.34, 0.05, 0.06, 0.02])
+    btn_select = Button(ax_select, 'Select')
+    
+    ax_delete = plt.axes([0.34, 0.02, 0.06, 0.02])
+    btn_delete = Button(ax_delete, 'Delete')
+    
+    # Mode states
+    select_mode = False
+    delete_mode = False
+    
+    # Rectangle selection state for delete mode
+    rect_selection = {
+        'active': False,
+        'start_x': None,
+        'start_y': None,
+        'current_x': None,
+        'current_y': None,
+        'plot_index': None,  # which plot (0-5) the selection started in
+        'rect_patch': None   # visual rectangle overlay
+    }
+
+    # Buttons: more compact layout
+    ax_preview = plt.axes([0.42, 0.08, 0.09, 0.03])
     btn_preview = Button(ax_preview, 'Preview')
     
-    ax_compute = plt.axes([0.52, 0.11, 0.11, 0.04])
+    ax_compute = plt.axes([0.52, 0.08, 0.11, 0.03])
     btn_compute = Button(ax_compute, 'Compute')
     
-    # Row 2: Apply Filter and Save
-    ax_apply_filter = plt.axes([0.42, 0.06, 0.11, 0.04])
+    ax_apply_filter = plt.axes([0.42, 0.04, 0.11, 0.03])
     btn_apply_filter = Button(ax_apply_filter, 'Apply Filter')
     
-    ax_save = plt.axes([0.54, 0.06, 0.09, 0.04])
+    ax_save = plt.axes([0.54, 0.04, 0.09, 0.03])
     btn_save = Button(ax_save, 'Save')
 
     # KF toggle
@@ -351,21 +402,83 @@ def dashboard(settings_file: str):
     def on_press(event):
         if event.inaxes is None:
             return
-        # Only handle dragging for top row plots
-        for j in range(3):
-            if event.inaxes == axes[0, j]:
-                x = event.xdata
-                if x is None:
-                    return
-                # Only start dragging if click is very close to time lines
-                if abs(x - t_start) < 0.2:
-                    drag_state.update({"kind": 'v', "which": 't_start'})
-                elif abs(x - t_end) < 0.2:
-                    drag_state.update({"kind": 'v', "which": 't_end'})
+            
+        # Handle rectangle selection in select or delete mode
+        if select_mode or delete_mode:
+            # Find which plot was clicked
+            plot_index = None
+            for j in range(3):  # 3 columns
+                if event.inaxes == axes[0, j]:
+                    plot_index = j  # 0-2 index
+                    break
+                    
+            if plot_index is not None and event.xdata is not None and event.ydata is not None:
+                rect_selection.update({
+                    'active': True,
+                    'start_x': event.xdata,
+                    'start_y': event.ydata,
+                    'current_x': event.xdata,
+                    'current_y': event.ydata,
+                    'plot_index': plot_index,
+                    'mode': 'select' if select_mode else 'delete'
+                })
                 return
+        
+        # Handle time line dragging (only when not in select or delete mode)
+        if not select_mode and not delete_mode:
+            for j in range(3):
+                if event.inaxes == axes[0, j]:
+                    x = event.xdata
+                    if x is None:
+                        return
+                    # Only start dragging if click is very close to time lines
+                    if abs(x - t_start) < 0.2:
+                        drag_state.update({"kind": 'v', "which": 't_start'})
+                    elif abs(x - t_end) < 0.2:
+                        drag_state.update({"kind": 'v', "which": 't_end'})
+                    return
 
     def on_motion(event):
         nonlocal t_start, t_end
+        
+        # Handle rectangle selection drawing in select or delete mode
+        if (select_mode or delete_mode) and rect_selection['active'] and event.inaxes is not None:
+            if event.xdata is not None and event.ydata is not None:
+                # Update current position
+                rect_selection['current_x'] = event.xdata
+                rect_selection['current_y'] = event.ydata
+                
+                # Remove existing rectangle if any
+                if rect_selection['rect_patch'] is not None:
+                    rect_selection['rect_patch'].remove()
+                
+                # Draw new rectangle
+                plot_index = rect_selection['plot_index']
+                ax = axes[0, plot_index]
+                
+                x_min = min(rect_selection['start_x'], rect_selection['current_x'])
+                x_max = max(rect_selection['start_x'], rect_selection['current_x'])
+                y_min = min(rect_selection['start_y'], rect_selection['current_y'])
+                y_max = max(rect_selection['start_y'], rect_selection['current_y'])
+                
+                width = x_max - x_min
+                height = y_max - y_min
+                
+                from matplotlib.patches import Rectangle
+                # Different colors for different modes
+                if select_mode:
+                    rect_patch = Rectangle((x_min, y_min), width, height, 
+                                         linewidth=2, edgecolor='blue', facecolor='blue', alpha=0.3)
+                else:  # delete_mode
+                    rect_patch = Rectangle((x_min, y_min), width, height, 
+                                         linewidth=2, edgecolor='red', facecolor='red', alpha=0.3)
+                ax.add_patch(rect_patch)
+                rect_selection['rect_patch'] = rect_patch
+                
+                fig.canvas.draw_idle()
+            return
+        
+        # Handle time line dragging (when not in delete mode)
         if drag_state["kind"] != 'v' or event.inaxes is None:
             return
         x = event.xdata
@@ -386,45 +499,115 @@ def dashboard(settings_file: str):
         fig.canvas.draw_idle()
 
     def on_release(event):
+        # Handle rectangle selection completion
+        if (select_mode or delete_mode) and rect_selection['active']:
+            # Calculate final rectangle bounds
+            x_min = min(rect_selection['start_x'], rect_selection['current_x'])
+            x_max = max(rect_selection['start_x'], rect_selection['current_x'])
+            y_min = min(rect_selection['start_y'], rect_selection['current_y'])
+            y_max = max(rect_selection['start_y'], rect_selection['current_y'])
+            
+            # Only process if rectangle has meaningful size
+            if (x_max - x_min) > 0.01 and (y_max - y_min) > 0.01:
+                selected_plot_index = rect_selection['plot_index']
+                
+                if select_mode:
+                    # SELECT MODE: Zoom all plots to show the selected rectangle area
+                    rect_width = x_max - x_min
+                    rect_height = y_max - y_min
+                    rect_center_x = (x_min + x_max) / 2
+                    rect_center_y = (y_min + y_max) / 2
+                    
+                    # Get current centers of all plots to maintain relative positions
+                    current_centers = []
+                    for j in range(3):
+                        xlim = axes[0, j].get_xlim()
+                        ylim = axes[0, j].get_ylim()
+                        center_x = (xlim[0] + xlim[1]) / 2
+                        center_y = (ylim[0] + ylim[1]) / 2
+                        current_centers.append((center_x, center_y))
+                    
+                    # Calculate offset from selected plot's current center
+                    selected_center_x, selected_center_y = current_centers[selected_plot_index]
+                    offset_x = rect_center_x - selected_center_x
+                    offset_y = rect_center_y - selected_center_y
+                    
+                    # Apply the same rectangle size and relative offset to all plots
+                    for j in range(3):
+                        # Calculate new center for this plot
+                        new_center_x = current_centers[j][0] + offset_x
+                        new_center_y = current_centers[j][1] + offset_y
+                        
+                        # Set all plots to same rectangle size as selected
+                        axes[0, j].set_xlim(new_center_x - rect_width/2, new_center_x + rect_width/2)
+                        axes[0, j].set_ylim(new_center_y - rect_height/2, new_center_y + rect_height/2)
+                    
+                    print(f"Zoomed to rectangle: width={rect_width:.2f}, height={rect_height:.2f}")
+                
+                elif delete_mode:
+                    # DELETE MODE: Delete lines within the rectangle
+                    roi_name = LABELS[selected_plot_index]
+                    
+                    # Find lines within rectangle bounds and mark for deletion
+                    lines_to_delete = []
+                    groups_local = group_by_roi_and_id(current_df())
+                    
+                    for cell_id, traj in groups_local.get(roi_name, {}).items():
+                        # Skip already deleted lines
+                        if (roi_name, cell_id) in deleted_lines:
+                            continue
+                            
+                        # Check if any part of this trajectory is within the rectangle
+                        ts = traj['timestamp'].values
+                        xs = traj['cell_x'].values
+                        
+                        # Check if any points are within rectangle bounds
+                        within_bounds = ((ts >= x_min) & (ts <= x_max) & 
+                                       (xs >= y_min) & (xs <= y_max))
+                        
+                        if np.any(within_bounds):
+                            lines_to_delete.append((roi_name, cell_id))
+                    
+                    # Delete the selected lines
+                    for roi, cid in lines_to_delete:
+                        deleted_lines.add((roi, cid))
+                    
+                    if lines_to_delete:
+                        print(f"Deleted {len(lines_to_delete)} lines in rectangle from {roi_name}")
+                        
+                        # Redraw all plots to remove deleted lines
+                        for j, label in enumerate(LABELS):
+                            axes[0, j].clear()
+                            plot_groups(axes[0, j], groups.get(label, {}), label)
+                            axes[0, j].set_title(("Data-" + label) + (" (KF)" if use_kf else " (RAW)"))
+                            axes[0, j].axvline(t_start, color='cyan', linestyle='-', linewidth=1.8, alpha=0.9)
+                            axes[0, j].axvline(t_end, color='magenta', linestyle='-', linewidth=1.8, alpha=0.9)
+            
+            # Clean up rectangle selection
+            if rect_selection['rect_patch'] is not None:
+                rect_selection['rect_patch'].remove()
+            
+            rect_selection.update({
+                'active': False,
+                'start_x': None,
+                'start_y': None,
+                'current_x': None,
+                'current_y': None,
+                'plot_index': None,
+                'rect_patch': None,
+                'mode': None
+            })
+            
+            fig.canvas.draw_idle()
+            return
+        
+        # Handle time line drag completion
         drag_state.update({"kind": None, "which": None})
 
-    # Line deletion handler
+    # Line deletion handler (disabled - now using rectangular selection)
     def on_pick(event):
-        line = event.artist
-        if hasattr(line, 'roi_name') and hasattr(line, 'cell_id'):
-            roi_name = line.roi_name
-            cell_id = line.cell_id
-            deleted_lines.add((roi_name, cell_id))
-            print(f"Deleted line: {roi_name} cell_id={cell_id}")
-            # Redraw the affected filtered plot (bottom row)
-            speeds_df = getattr(fig, '_speeds_df', None)
-            if speeds_df is not None and len(speeds_df) > 0:
-                vmin, vmax = get_speed_bounds()
-                # Use absolute speed values for filtering
-                abs_speeds = np.abs(speeds_df['speed_px_per_s'])
-                passed = speeds_df[np.isfinite(speeds_df['speed_px_per_s']) & (abs_speeds >= vmin) & (abs_speeds <= vmax)]
-                pass_pairs = set((r, int(cid)) for r, cid in zip(passed['roi'], passed['cell_id']))
-                groups_local = group_by_roi_and_id(current_df())
-                
-                for j, label in enumerate(LABELS):
-                    if label == roi_name:
-                        ax = axes[1, j]
-                        ax.clear()
-                        # plot only those pairs that passed at least once and are not deleted
-                        for _id, traj in groups_local.get(label, {}).items():
-                            if (label, int(_id)) in pass_pairs and (label, _id) not in deleted_lines:
-                                line = ax.plot(traj['timestamp'].values, traj['cell_x'].values, linewidth=1.6, alpha=0.95, picker=True, pickradius=15)[0]
-                                # Store metadata for click handling
-                                line.roi_name = label
-                                line.cell_id = _id
-                        for (ts, te) in build_cycles():
-                            ax.axvline(ts, color='cyan', linestyle=':', linewidth=1.0, alpha=0.9)
-                            ax.axvline(te, color='magenta', linestyle=':', linewidth=1.0, alpha=0.9)
-                        ax.set_title(f"Filtered-{label} |v|∈[{vmin:.2f},{vmax:.2f}] px/s")
-                        ax.grid(True, alpha=0.3)
-                        ax.set_xlabel('time (s)'); ax.set_ylabel('x (px)')
-                        break
-            fig.canvas.draw_idle()
+        # Rectangular selection replaces individual line clicking
+        pass
 
     cid_pick = fig.canvas.mpl_connect('pick_event', on_pick)
     cid_press = fig.canvas.mpl_connect('button_press_event', on_press)
@@ -591,6 +774,167 @@ def dashboard(settings_file: str):
             print("⚠️  No filtered speeds data to save. Run Apply Filter first.")
 
     btn_save.on_clicked(on_save)
+
+    # Scale slider callbacks
+    def on_x_scale_change(val):
+        """Handle X scale (time axis) zoom changes"""
+        zoom = val
+        if len(df_for_scale) == 0:
+            return
+            
+        # Get current center from the first plot's current view
+        current_xlim = axes[0, 0].get_xlim()
+        t_center = (current_xlim[0] + current_xlim[1]) / 2
+        t_half_range = t_range / (2 * zoom)
+        
+        # Set new X limits centered on current view center
+        x_min = t_center - t_half_range
+        x_max = t_center + t_half_range
+        
+        # Apply to all plots
+        for j in range(3):
+            axes[0, j].set_xlim(x_min, x_max)
+            
+        fig.canvas.draw_idle()
+    
+    def on_y_scale_change(val):
+        """Handle Y scale (position axis) zoom changes"""
+        zoom = val
+        if len(df_for_scale) == 0:
+            return
+            
+        # Calculate new half range based on original Y data range and zoom
+        y_half_range = (x_data_max - x_data_min) / (2 * zoom)
+        
+        # Apply scaling to each graph individually, preserving their own centers
+        for j in range(3):
+            # Get current center for THIS specific graph
+            current_ylim = axes[0, j].get_ylim()
+            y_center = (current_ylim[0] + current_ylim[1]) / 2
+            
+            # Set new Y limits centered on each graph's own center
+            axes[0, j].set_ylim(y_center - y_half_range, y_center + y_half_range)
+            
+        fig.canvas.draw_idle()
+    
+    def on_x_offset_left(event):
+        """Move view left"""
+        for j in range(3):
+            xlim = axes[0, j].get_xlim()
+            x_shift = (xlim[1] - xlim[0]) * 0.1  # 10% of current range
+            axes[0, j].set_xlim(xlim[0] - x_shift, xlim[1] - x_shift)
+        fig.canvas.draw_idle()
+    
+    def on_x_offset_right(event):
+        """Move view right"""
+        for j in range(3):
+            xlim = axes[0, j].get_xlim()
+            x_shift = (xlim[1] - xlim[0]) * 0.1  # 10% of current range
+            axes[0, j].set_xlim(xlim[0] + x_shift, xlim[1] + x_shift)
+        fig.canvas.draw_idle()
+    
+    def on_y_offset_up(event):
+        """Move view up"""
+        for j in range(3):
+            ylim = axes[0, j].get_ylim()
+            y_shift = (ylim[1] - ylim[0]) * 0.1  # 10% of current range
+            axes[0, j].set_ylim(ylim[0] + y_shift, ylim[1] + y_shift)
+        fig.canvas.draw_idle()
+    
+    def on_y_offset_down(event):
+        """Move view down"""
+        for j in range(3):
+            ylim = axes[0, j].get_ylim()
+            y_shift = (ylim[1] - ylim[0]) * 0.1  # 10% of current range
+            axes[0, j].set_ylim(ylim[0] - y_shift, ylim[1] - y_shift)
+        fig.canvas.draw_idle()
+
+    def on_select_toggle(event):
+        """Toggle select mode on/off"""
+        nonlocal select_mode, delete_mode
+        
+        if select_mode:
+            select_mode = False
+            btn_select.label.set_text('Select')
+            btn_select.color = 'lightgray'
+            btn_select.hovercolor = 'gray'
+            print("Select mode OFF")
+        else:
+            # Turn off delete mode if it's on
+            if delete_mode:
+                delete_mode = False
+                btn_delete.label.set_text('Delete')
+                btn_delete.color = 'lightgray'
+                btn_delete.hovercolor = 'gray'
+            
+            select_mode = True
+            btn_select.label.set_text('Exit Sel')
+            btn_select.color = 'blue'
+            btn_select.hovercolor = 'darkblue'
+            print("Select mode ON - Draw rectangles to zoom to selected area")
+        
+        # Clean up any active rectangle selection
+        if rect_selection['rect_patch'] is not None:
+            rect_selection['rect_patch'].remove()
+            rect_selection.update({
+                'active': False,
+                'start_x': None,
+                'start_y': None,
+                'current_x': None,
+                'current_y': None,
+                'plot_index': None,
+                'rect_patch': None
+            })
+        
+        fig.canvas.draw_idle()
+
+    def on_delete_toggle(event):
+        """Toggle delete mode on/off"""
+        nonlocal delete_mode, select_mode
+        
+        if delete_mode:
+            delete_mode = False
+            btn_delete.label.set_text('Delete')
+            btn_delete.color = 'lightgray'
+            btn_delete.hovercolor = 'gray'
+            print("Delete mode OFF")
+        else:
+            # Turn off select mode if it's on
+            if select_mode:
+                select_mode = False
+                btn_select.label.set_text('Select')
+                btn_select.color = 'lightgray'
+                btn_select.hovercolor = 'gray'
+            
+            delete_mode = True
+            btn_delete.label.set_text('Exit Del')
+            btn_delete.color = 'red'
+            btn_delete.hovercolor = 'darkred'
+            print("Delete mode ON - Draw rectangles to delete cell lines")
+        
+        # Clean up any active rectangle selection
+        if rect_selection['rect_patch'] is not None:
+            rect_selection['rect_patch'].remove()
+            rect_selection.update({
+                'active': False,
+                'start_x': None,
+                'start_y': None,
+                'current_x': None,
+                'current_y': None,
+                'plot_index': None,
+                'rect_patch': None
+            })
+        
+        fig.canvas.draw_idle()
+
+    s_x_scale.on_changed(on_x_scale_change)
+    s_y_scale.on_changed(on_y_scale_change)
+    btn_x_left.on_clicked(on_x_offset_left)
+    btn_x_right.on_clicked(on_x_offset_right)
+    btn_y_up.on_clicked(on_y_offset_up)
+    btn_y_down.on_clicked(on_y_offset_down)
+    btn_select.on_clicked(on_select_toggle)
+    btn_delete.on_clicked(on_delete_toggle)
 
     plt.show()
 

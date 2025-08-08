@@ -1701,7 +1701,7 @@ based on the current settings file.
             return
             
         try:
-            # Get the dashboard script path
+            # Get the original matplotlib dashboard script path
             dashboard_script = os.path.join(os.path.dirname(__file__), 'roi_tracking_dashboard.py')
             
             if not os.path.exists(dashboard_script):

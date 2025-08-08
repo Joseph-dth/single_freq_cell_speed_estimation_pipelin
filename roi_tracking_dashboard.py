@@ -340,6 +340,10 @@ def dashboard(settings_file: str):
     ax_delete = plt.axes([0.34, 0.02, 0.06, 0.02])
     btn_delete = Button(ax_delete, 'Delete')
     
+    # Auto-scale button
+    ax_autoscale = plt.axes([0.41, 0.05, 0.06, 0.02])
+    btn_autoscale = Button(ax_autoscale, 'Auto Scale')
+    
     # Mode states
     select_mode = False
     delete_mode = False
@@ -908,8 +912,54 @@ def dashboard(settings_file: str):
     btn_x_right.on_clicked(on_x_offset_right)
     btn_y_up.on_clicked(on_y_offset_up)
     btn_y_down.on_clicked(on_y_offset_down)
+    def on_autoscale(event):
+        """Auto-scale all plots to fit current data"""
+        df_for_autoscale = current_df()
+        if len(df_for_autoscale) == 0:
+            print("No data to auto-scale")
+            return
+        
+        # Get data bounds for each ROI
+        for j, roi in enumerate(LABELS):
+            roi_data = df_for_autoscale[df_for_autoscale['roi'] == roi]
+            
+            if len(roi_data) > 0:
+                # Filter out deleted lines from auto-scale calculation
+                roi_data_filtered = roi_data[~roi_data.apply(
+                    lambda row: (roi, row['cell_id']) in deleted_lines, axis=1
+                )]
+                
+                if len(roi_data_filtered) > 0:
+                    t_min, t_max = roi_data_filtered['timestamp'].min(), roi_data_filtered['timestamp'].max()
+                    x_min, x_max = roi_data_filtered['cell_x'].min(), roi_data_filtered['cell_x'].max()
+                    
+                    # Add some padding (5% on each side)
+                    t_padding = (t_max - t_min) * 0.05
+                    x_padding = (x_max - x_min) * 0.05
+                    
+                    axes[0, j].set_xlim(t_min - t_padding, t_max + t_padding)
+                    axes[0, j].set_ylim(x_min - x_padding, x_max + x_padding)
+                else:
+                    # If all lines are deleted, use original data bounds
+                    t_min, t_max = roi_data['timestamp'].min(), roi_data['timestamp'].max()
+                    x_min, x_max = roi_data['cell_x'].min(), roi_data['cell_x'].max()
+                    
+                    t_padding = (t_max - t_min) * 0.05
+                    x_padding = (x_max - x_min) * 0.05
+                    
+                    axes[0, j].set_xlim(t_min - t_padding, t_max + t_padding)
+                    axes[0, j].set_ylim(x_min - x_padding, x_max + x_padding)
+        
+        # Reset zoom sliders to 1.0
+        s_x_scale.reset()
+        s_y_scale.reset()
+        
+        fig.canvas.draw_idle()
+        print("Auto-scaled all plots to fit data")
+
     btn_select.on_clicked(on_select_toggle)
     btn_delete.on_clicked(on_delete_toggle)
+    btn_autoscale.on_clicked(on_autoscale)
 
     plt.show()
 

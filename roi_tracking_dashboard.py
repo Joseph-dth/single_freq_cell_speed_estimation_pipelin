@@ -609,10 +609,56 @@ def dashboard(settings_file: str):
         # Rectangular selection replaces individual line clicking
         pass
 
+    # ESC key handler to deselect/cancel operations
+    def on_key_press(event):
+        nonlocal select_mode, delete_mode, drag_state
+        
+        if event.key == 'escape':
+            # Cancel time line dragging
+            if drag_state["kind"] is not None:
+                drag_state.update({"kind": None, "which": None})
+                print("Cancelled time line dragging")
+            
+            # Cancel rectangle selection
+            if rect_selection['active']:
+                if rect_selection['rect_patch'] is not None:
+                    rect_selection['rect_patch'].remove()
+                rect_selection.update({
+                    'active': False,
+                    'start_x': None,
+                    'start_y': None,
+                    'current_x': None,
+                    'current_y': None,
+                    'plot_index': None,
+                    'rect_patch': None,
+                    'mode': None
+                })
+                print("Cancelled rectangle selection")
+                fig.canvas.draw_idle()
+            
+            # Exit select mode
+            if select_mode:
+                select_mode = False
+                btn_select.label.set_text('Select')
+                btn_select.color = 'lightgray'
+                btn_select.hovercolor = 'gray'
+                print("Exited select mode")
+                fig.canvas.draw_idle()
+            
+            # Exit delete mode
+            if delete_mode:
+                delete_mode = False
+                btn_delete.label.set_text('Delete')
+                btn_delete.color = 'lightgray'
+                btn_delete.hovercolor = 'gray'
+                print("Exited delete mode")
+                fig.canvas.draw_idle()
+
     cid_pick = fig.canvas.mpl_connect('pick_event', on_pick)
     cid_press = fig.canvas.mpl_connect('button_press_event', on_press)
     cid_motion = fig.canvas.mpl_connect('motion_notify_event', on_motion)
     cid_release = fig.canvas.mpl_connect('button_release_event', on_release)
+    cid_key = fig.canvas.mpl_connect('key_press_event', on_key_press)
 
     # Build cycles helper
     def build_cycles() -> List[Tuple[float, float]]:
@@ -723,9 +769,12 @@ def dashboard(settings_file: str):
         out_png = folder / f"{base}_roi_dashboard.png"
         fig.savefig(out_png, dpi=200, bbox_inches='tight')
         
-        # Only save filtered speeds CSV
+        # Try to save filtered speeds CSV first, then unfiltered if available
         spd_f_df = getattr(fig, '_speeds_filtered_df', None)
+        spd_df = getattr(fig, '_speeds_df', None)
+        
         if isinstance(spd_f_df, pd.DataFrame) and len(spd_f_df):
+            # Save filtered speeds
             csv_path = folder / f"{base}_speeds_filtered.csv"
             spd_f_df.to_csv(csv_path, index=False)
             
@@ -737,7 +786,31 @@ def dashboard(settings_file: str):
             std_speed_um = spd_f_df['speed_um_per_s'].std()
             
             print("=" * 60)
-            print("📊 SUMMARY STATISTICS")
+            print("📊 SUMMARY STATISTICS (FILTERED)")
+            print("=" * 60)
+            print(f"📁 Saved files:")
+            print(f"   • {out_png}")
+            print(f"   • {csv_path}")
+            print()
+            print(f"📈 Data points: {n_rows}")
+            print(f"📏 Speed (px/s): {mean_speed_px:.2f} ± {std_speed_px:.2f}")
+            print(f"📏 Speed (μm/s): {mean_speed_um:.2f} ± {std_speed_um:.2f}")
+            print(f"📊 Coefficient of Variation: {(std_speed_px/mean_speed_px)*100:.1f}%")
+            print("=" * 60)
+        elif isinstance(spd_df, pd.DataFrame) and len(spd_df):
+            # Save unfiltered speeds if no filtered data exists
+            csv_path = folder / f"{base}_speeds_all.csv"
+            spd_df.to_csv(csv_path, index=False)
+            
+            # Calculate and display summary statistics
+            n_rows = len(spd_df)
+            mean_speed_px = spd_df['speed_px_per_s'].mean()
+            std_speed_px = spd_df['speed_px_per_s'].std()
+            mean_speed_um = spd_df['speed_um_per_s'].mean()
+            std_speed_um = spd_df['speed_um_per_s'].std()
+            
+            print("=" * 60)
+            print("📊 SUMMARY STATISTICS (ALL COMPUTED)")
             print("=" * 60)
             print(f"📁 Saved files:")
             print(f"   • {out_png}")
@@ -750,7 +823,7 @@ def dashboard(settings_file: str):
             print("=" * 60)
         else:
             print(f"Saved dashboard: {out_png}")
-            print("⚠️  No filtered speeds data to save. Run Apply Filter first.")
+            print("ℹ️  No speed data computed yet. Click 'Compute' first to save CSV.")
 
     btn_save.on_clicked(on_save)
 

@@ -7,7 +7,9 @@
       "Bash(conda list:*)",
       "Bash(/opt/miniconda3/bin/conda env export:*)",
       "Bash(echo $CONDA_EXE)",
-      "Bash(/opt/anaconda3/bin/conda env export -n poly --no-builds)"
+      "Bash(/opt/anaconda3/bin/conda env export -n poly --no-builds)",
+      "Bash(git checkout:*)",
+      "Bash(git push:*)"
     ],
     "deny": []
   }
